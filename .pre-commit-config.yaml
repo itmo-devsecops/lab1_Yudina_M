@@ -4,7 +4,7 @@ repos:
     hooks:
       - id: gitleaks-local
         name: gitleaks (detect secrets)
-        entry: "C:/Users/User/AppData/Local/Microsoft/WinGet/Links/gitleaks.exe detect --source . --config .gitleaks.toml"
+        entry: "C:/Users/User/AppData/Local/Microsoft/WinGet/Links/gitleaks.exe protect --staged --config .gitleaks.toml"
         language: system
         pass_filenames: false
         verbose: true
