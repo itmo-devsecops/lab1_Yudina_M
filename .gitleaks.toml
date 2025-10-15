@@ -1,0 +1,10 @@
+title = "Lab2 gitleaks config - Yudina M."
+
+[[rules]]
+id = "demo-secret"
+description = "Учебный демо-секрет формата DEMO_SECRET=demo_<uuid>"
+regex = '''(?i)DEMO_SECRET\s*=\s*demo_[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}'''
+keywords = ["DEMO_SECRET"]
+
+[allowlist]
+paths = ["README.md"]

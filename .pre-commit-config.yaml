@@ -1,0 +1,10 @@
+# pre-commit hook для проверки секретов с помощью gitleaks
+repos:
+  - repo: local
+    hooks:
+      - id: gitleaks-local
+        name: gitleaks (detect secrets)
+        entry: sh -c "gitleaks detect --source . --config .gitleaks.toml"
+        language: system
+        pass_filenames: false
+        verbose: true
