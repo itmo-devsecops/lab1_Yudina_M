@@ -1,10 +1,17 @@
-title = "Lab2 gitleaks config - Yudina M."
+title = "Lab gitleaks config"
 
 [[rules]]
 id = "demo-secret"
-description = "Учебный демо-секрет формата DEMO_SECRET=demo_<uuid>"
-regex = '''(?i)DEMO_SECRET\s*=\s*demo_[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}'''
+description = "DEMO_SECRET test value for lab work"
+regex = '''(?i)DEMO_SECRET\s*=\s*demo_[0-9a-f-]{36}'''
 keywords = ["DEMO_SECRET"]
 
 [allowlist]
-paths = ["README.md"]
+description = "Allow test and documentation files with demo secrets"
+paths = [
+  "README.md",
+  "INSTALL.txt",
+  ".*gitleaks-before\\.json",
+  ".*gitleaks-after\\.json",
+  ".*gitleaks-check\\.json"
+]
