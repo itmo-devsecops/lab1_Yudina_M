@@ -9,7 +9,8 @@ keywords = ["DEMO_SECRET"]
 [[rules]]
 id = "aws-secret-access-key"
 description = "AWS Secret Access Key"
-regex = '''AKIA[0-9A-Z]{16}'''
+# Немного упрощённый шаблон — чтобы ловить даже тестовые ключи
+regex = '''AKIA[0-9A-Z]{10,20}'''
 tags = ["key", "AWS"]
 
 [allowlist]
