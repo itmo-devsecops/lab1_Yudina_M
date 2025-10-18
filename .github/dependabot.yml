@@ -1,7 +1,16 @@
 version: 2
 updates:
+  # Проверка Python-зависимостей
   - package-ecosystem: "pip"
     directory: "/"
     schedule:
       interval: "weekly"
+    commit-message:
+      prefix: "deps"
     open-pull-requests-limit: 5
+
+  # Проверка GitHub Actions (если используются)
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
