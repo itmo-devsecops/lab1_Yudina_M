@@ -1,0 +1,12 @@
+services:
+  web:
+    container_name: flask_app
+    build: .
+    ports:
+      - "5000:5000"        # Проброс порта контейнера на локальную машину
+    env_file:
+      - .env               # Подключаем файл с переменными окружения
+    volumes:
+      - .:/app             # Подключаем текущую директорию внутрь контейнера (удобно для разработки)
+    restart: unless-stopped
+    command: python app.py --host=0.0.0.0

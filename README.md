@@ -1,21 +1,58 @@
-# Lab2 — Управление исходным кодом (DevSecOps)
+# Lab3 — Контейнеризация проекта с помощью Docker (на основе Lab2)
 
 ## Описание проекта
 
 Этот проект — Flask-приложение для управления списком студентов.  
-В рамках **лабораторной работы №2** была проведена интеграция инструментов DevSecOps для повышения безопасности и управляемости исходного кода.
+В рамках **лабораторной работы №2** была проведена интеграция инструментов DevSecOps для повышения безопасности и управляемости исходного кода.  
+Теперь в **лабораторной работы №3** проект дополнен поддержкой **Docker**, что позволило контейнеризировать приложение и упростить его запуск.
 
 ---
 
 ## Цели лабораторной работы
 
-- Освоить практики **управления исходным кодом** в контексте DevSecOps.  
-- Научиться выявлять и предотвращать утечки секретов.  
-- Очистить историю репозитория от конфиденциальных данных.  
-- Настроить **pre-commit hook** для предотвращения коммитов с секретами.  
-- Сгенерировать **SBOM** для анализа зависимостей.  
-- Настроить **Dependabot** для автоматического обновления зависимостей.
+- Освоить основы контейнеризации приложений с помощью **Docker**
+- Добавить возможность развёртывания проекта в изолированном окружении
+- Создать и протестировать файлы `Dockerfile` и `docker-compose.yml`
+- Обновить документацию, указав новый способ запуска приложения
 
+---
+
+## Нововведения в рамках лабораторной №3
+
+1. **Создан Dockerfile** - описание сборки проекта
+2. **Создан docker-compose.yml** - управление запуском контейнера
+3. **Изменён файл app.py** - добавлен запуск на всех интерфейсах контейнера
+4. **Обновлён README.md** - с инструкцией по Docker-запуску
+
+### Dockerfile
+```dockerfile
+FROM python:3.11-slim
+WORKDIR /app
+COPY . /app
+RUN pip install --upgrade pip && \
+    pip install -r requirements.txt
+EXPOSE 5000
+CMD ["python", "app.py"]
+```
+
+### docker-compose.yml
+```yaml
+services:
+  web:
+    build: .
+    container_name: flask_app
+    ports:
+      - "5000:5000"
+    env_file:
+      - .env
+    restart: always
+```
+
+### Изменения в app.py
+```python
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000, debug=True)
+```
 ---
 
 ## Структура проекта
@@ -23,176 +60,41 @@
 ```
 lab1_Yudina_M/
 │
-├── app.py                    # Основной Flask-файл приложения
+├── app.py                    # Flask-приложение (обновлено)
 ├── database.py               # Подключение и настройка базы данных
-├── models.py                 # Определение моделей SQLAlchemy
+├── models.py                 # Модель данных SQLAlchemy
 ├── templates/                # HTML-шаблоны
 │   ├── index.html
 │   └── add_student.html
 │
+├── .env                      # Переменные окружения
+├── Dockerfile                # Сборка Docker-образа
+├── docker-compose.yml        # Запуск контейнера
+│
 ├── .gitleaks.toml            # Конфигурация Gitleaks
-├── .gitleaksignore           # Исключения для Gitleaks
-├── .pre-commit-config.yaml   # Настройка pre-commit hook
-├── requirements.txt          # Зависимости проекта
-├── sbom.json                 # Сгенерированный SBOM (CycloneDX)
+├── .pre-commit-config.yaml   # Настройка pre-commit
+├── requirements.txt          # Зависимости Python
+├── sbom.json                 # SBOM отчёт
 ├── .github/
-│   └── dependabot.yml        # Конфигурация Dependabot
-└── README.md
+│   └── dependabot.yml        # Настройка Dependabot
+└── README_lab3.txt
 ```
 
 ---
 
-## Работа с секретами
+## Запуск приложения через Docker
 
-### 1️ Добавление тестовых секретов
-
-Был добавлен учебный секрет в файл `.env`:
-```
-DEMO_SECRET=demo_123e4567-e89b-12d3-a456-426614174000
-```
-
-### 2️ Настройка Gitleaks
-
-Создан конфигурационный файл `.gitleaks.toml` с кастомным правилом:
-```toml
-title = "Lab gitleaks config"
-
-[[rules]]
-id = "demo-secret"
-description = "Demo secret detection rule"
-regex = '''(?i)DEMO_SECRET\s*=\s*demo_[0-9a-f-]{36}'''
-keywords = ["DEMO_SECRET"]
-
-[allowlist]
-paths = ["README.md"]
-```
-
-### 3️ Проверка секретов
-
-Запуск проверки:
+### Собрать и запустить контейнер:
 ```bash
-gitleaks detect --source . --no-git --report-format json --report-path gitleaks-before.json
+docker compose up --build
 ```
 
-В отчёте найден DEMO_SECRET.  
+### Открыть приложение:
+```
+http://127.0.0.1:5000
+```
 
----
-
-## Очистка истории Git
-
-Для удаления секретов из истории:
+### Остановить и удалить контейнеры:
 ```bash
-git filter-repo --path bad_secret.txt --invert-paths --force
+docker compose down -v
 ```
-
-Повторная проверка:
-```bash
-gitleaks detect --source . --log-opts="--all"
-```
-
-Результат: “no leaks found”.
-
----
-
-## Настройка pre-commit hook
-
-Добавлен файл `.pre-commit-config.yaml`:
-```yaml
-repos:
-  - repo: https://github.com/zricethezav/gitleaks
-    rev: v8.18.1
-    hooks:
-      - id: gitleaks
-        name: gitleaks (detect secrets)
-        entry: gitleaks detect --source . --no-git --config .gitleaks.toml
-        language: system
-        pass_filenames: false
-```
-
-Установка и проверка:
-```bash
-pre-commit install
-pre-commit run --all-files
-```
-
-При попытке закоммитить секрет — коммит блокируется.
-
----
-
-## Генерация SBOM
-
-Установлен инструмент **CycloneDX** и выполнена команда:
-```bash
-python -m cyclonedx_py requirements -o sbom.json
-```
-
-Сгенерирован файл `sbom.json`, содержащий информацию обо всех зависимостях проекта.
-
----
-
-## Проверка уязвимостей (Grype)
-
-Сканирование зависимостей:
-```bash
-grype sbom:sbom.json -o json > vulnerabilities.json
-```
-
-Найдено 28 уязвимостей:
-- 3 критические  
-- 7 высоких  
-- 14 средних  
-- 4 низких
-
-Файл `vulnerabilities.json` содержит полный отчёт об уязвимостях.
-
----
-
-## Настройка Dependabot
-
-Создан `.github/dependabot.yml`:
-```yaml
-version: 2
-updates:
-  - package-ecosystem: "pip"
-    directory: "/"
-    schedule:
-      interval: "weekly"
-    commit-message:
-      prefix: "deps"
-    open-pull-requests-limit: 5
-
-  - package-ecosystem: "github-actions"
-    directory: "/"
-    schedule:
-      interval: "weekly"
-```
-
-Dependabot автоматически создаёт Pull Request’ы с обновлениями зависимостей.
-
----
-
-## Результаты
-
-| Этап | Инструмент | Результат              |
-|------|-------------|------------------------|
-| Обнаружение секретов | Gitleaks | Найдены учебные секреты |
-| Очистка истории | git-filter-repo | История очищена        |
-| Pre-commit проверка | pre-commit + gitleaks | Коммиты с секретами блокируются |
-| SBOM | CycloneDX | Сгенерирован sbom.json |
-| Анализ уязвимостей | Grype | vulnerabilities.json создан |
-| Автообновление зависимостей | Dependabot | Настроен               |
-
----
-
-## Вывод
-
-В ходе лабораторной работы №2 были реализованы основные DevSecOps-практики:
-
-- предотвращение утечек секретов;
-- очистка истории репозитория от чувствительных данных;
-- внедрение pre-commit-хуков;
-- генерация и анализ SBOM;
-- автоматизация обновления зависимостей.
-
-Все инструменты успешно интегрированы и протестированы.  
-Проект соответствует требованиям безопасной разработки (Secure SDLC).
