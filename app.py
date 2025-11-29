@@ -21,12 +21,12 @@ def add_student():
     if request.method == 'POST':
         db = SessionLocal()
         new_student = Student(
-            surname=request.form['surname'],
-            name=request.form['name'],
-            patronymic=request.form.get('patronymic', None),
-            course=int(request.form['course']),
-            group=request.form['group'],
-            faculty=request.form['faculty']
+            surname=request.form.get('surname'),
+            name=request.form.get('name'),
+            patronymic=request.form.get('patronymic'),
+            course=int(request.form.get('course', 0)),
+            group=request.form.get('group'),
+            faculty=request.form.get('faculty')
         )
         db.add(new_student)
         db.commit()
@@ -34,9 +34,21 @@ def add_student():
         return redirect(url_for('index'))
     return render_template('add_student.html')
 
+
+@app.route('/delete/<int:student_id>', methods=['GET'])
+def delete_student(student_id):
+    db = SessionLocal()
+    student = db.query(Student).filter_by(id=student_id).first()
+    if student:
+        db.delete(student)
+        db.commit()
+    db.close()
+    return redirect(url_for('index'))
+
+
 @app.route('/healthcheck')
 def healthcheck():
-    return "OK", 200
+    return {"status": "ok"}, 200
 
 
 if __name__ == '__main__':
