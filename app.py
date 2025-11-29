@@ -4,7 +4,7 @@ from models import Student
 
 app = Flask(__name__)
 
-# Создание таблиц
+# Создаём таблицы, если их нет
 Base.metadata.create_all(bind=engine)
 
 
@@ -21,19 +21,22 @@ def add_student():
     if request.method == 'POST':
         db = SessionLocal()
         new_student = Student(
-            surname=request.form.get('surname'),
-            name=request.form.get('name'),
-            patronymic=request.form.get('patronymic'),
-            course=int(request.form.get('course')),
-            group=request.form.get('group'),
-            faculty=request.form.get('faculty')
+            surname=request.form['surname'],
+            name=request.form['name'],
+            patronymic=request.form.get('patronymic', None),
+            course=int(request.form['course']),
+            group=request.form['group'],
+            faculty=request.form['faculty']
         )
         db.add(new_student)
         db.commit()
         db.close()
         return redirect(url_for('index'))
-
     return render_template('add_student.html')
+
+@app.route('/healthcheck')
+def healthcheck():
+    return "OK", 200
 
 
 if __name__ == '__main__':
