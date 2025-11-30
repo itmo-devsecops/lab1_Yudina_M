@@ -4,7 +4,6 @@ from models import Student
 
 app = Flask(__name__)
 
-# Создаём таблицы, если их нет
 Base.metadata.create_all(bind=engine)
 
 

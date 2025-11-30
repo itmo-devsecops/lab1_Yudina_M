@@ -1,23 +1,22 @@
-# Используем официальный образ Python
-FROM python:3.11-slim
+FROM python:3.10-slim
 
-# Устанавливаем переменные окружения
-ENV PYTHONDONTWRITEBYTECODE=1
-ENV PYTHONUNBUFFERED=1
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    build-essential \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
 
-# Создаём рабочую директорию внутри контейнера
 WORKDIR /app
 
-# Копируем файлы проекта
+COPY requirements.txt requirements.txt
+RUN python -m pip install --upgrade pip
+RUN pip install -r requirements.txt
+
 COPY . /app
 
-# Устанавливаем зависимости
-RUN pip install --upgrade pip && \
-    pip install -r requirements.txt
-
-# Указываем порт, который будет использовать Flask
 EXPOSE 5000
 
-# Команда запуска Flask-приложения
-CMD ["python", "app.py", "--host=0.0.0.0"]
+CMD ["gunicorn", "--bind", "0.0.0.0:5000", "app:app"]
 
+HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
+  CMD curl -f http://localhost:5000/healthcheck || exit 1
