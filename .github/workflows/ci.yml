@@ -11,10 +11,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: "3.10"
 
@@ -34,7 +34,7 @@ jobs:
           mkdir -p artifacts/bandit-report
           bandit -r . -f json -o artifacts/bandit-report/bandit-report.json || true
 
-      - name: Upload artifacts
+      - name: Upload lint and bandit artifacts
         uses: actions/upload-artifact@v4
         with:
           name: lint-bandit
@@ -45,47 +45,44 @@ jobs:
     needs: lint_and_security
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
-      - name: Install Docker
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y docker.io
+      # Docker уже установлен в GitHub Actions ➜ не ставим вручную
 
       - name: Build Docker image
         run: docker build -t app:latest .
 
       - name: Install Trivy
         run: |
-          sudo apt-get install -y wget apt-transport-https gnupg lsb-release
-          wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | sudo apt-key add -
-          echo "deb https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main" | sudo tee /etc/apt/sources.list.d/trivy.list
+          sudo apt-get update
+          sudo apt-get install -y wget
+          wget -qO- https://aquasecurity.github.io/trivy-repo/deb/public.key | \
+            sudo gpg --dearmor -o /usr/share/keyrings/trivy.gpg
+          echo "deb [signed-by=/usr/share/keyrings/trivy.gpg] https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main" | \
+            sudo tee /etc/apt/sources.list.d/trivy.list
           sudo apt-get update
           sudo apt-get install -y trivy
 
       - name: Run Trivy
         run: |
-          mkdir -p artifacts/trivy-report
-          trivy filesystem --exit-code 0 --no-progress --format json \
-            --output artifacts/trivy-report/trivy-report.json .
+          mkdir -p artifacts/trivy
+          trivy fs --exit-code 0 --no-progress --format json \
+            --output artifacts/trivy/trivy-report.json .
 
       - name: Upload Trivy artifact
         uses: actions/upload-artifact@v4
         with:
           name: trivy
-          path: artifacts/trivy-report/
+          path: artifacts/trivy/
 
   healthcheck:
     runs-on: ubuntu-latest
     needs: docker_and_trivy
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
-      - name: Install Docker
-        run: sudo apt-get install -y docker.io
-
-      - name: Build image
+      - name: Build Docker image
         run: docker build -t app:latest .
 
       - name: Run container
@@ -98,8 +95,8 @@ jobs:
           STATUS=$(curl -o /dev/null -s -w "%{http_code}" http://localhost:5000/healthcheck)
           echo "Status: $STATUS"
           if [ "$STATUS" != "200" ]; then
-            echo "Healthcheck FAILED"
-            exit 1
+              echo "Healthcheck FAILED"
+              exit 1
           fi
           echo "Healthcheck OK"
 
@@ -108,7 +105,7 @@ jobs:
     needs: lint_and_security
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Install Hadolint
         run: |
@@ -117,14 +114,14 @@ jobs:
 
       - name: Run Hadolint
         run: |
-          mkdir -p artifacts/hadolint-report
-          hadolint Dockerfile > artifacts/hadolint-report/hadolint-report.txt || true
+          mkdir -p artifacts/hadolint
+          hadolint Dockerfile > artifacts/hadolint/hadolint-report.txt || true
 
-      - name: Upload Hadolint report
+      - name: Upload Hadolint artifact
         uses: actions/upload-artifact@v4
         with:
           name: hadolint
-          path: artifacts/hadolint-report/
+          path: artifacts/hadolint/
 
   summary:
     runs-on: ubuntu-latest
@@ -144,7 +141,7 @@ jobs:
               try:
                   with open(path, 'r', encoding='utf-8') as f:
                       return json.load(f)
-              except Exception:
+              except:
                   return None
 
           lines = []
@@ -162,8 +159,8 @@ jobs:
           bandit_path = "artifacts/lint-bandit/bandit-report/bandit-report.json"
           bandit = load_json(bandit_path)
           if bandit:
-              res = bandit.get("results", [])
-              lines.append(f"## Bandit\nTotal issues: {len(res)}\n")
+              issues = bandit.get("results", [])
+              lines.append(f"## Bandit\nTotal issues: {len(issues)}\n")
           else:
               lines.append("## Bandit\nNo report found\n")
 
@@ -174,20 +171,21 @@ jobs:
               total = 0
               for res in trivy.get("Results", []):
                   vulns = res.get("Vulnerabilities", [])
-                  total += len(vulns)
+                  if vulns:
+                      total += len(vulns)
               lines.append(f"## Trivy\nTotal vulnerabilities: {total}\n")
           else:
               lines.append("## Trivy\nNo report found\n")
 
           # Hadolint
-          had_path = "artifacts/hadolint/hadolint-report.txt"
-          if os.path.exists(had_path):
-              text = open(had_path).read()
+          hadolint_path = "artifacts/hadolint/hadolint-report.txt"
+          if os.path.exists(hadolint_path):
+              text = open(hadolint_path).read()
               lines.append("## Hadolint\n```\n" + text + "\n```\n")
           else:
               lines.append("## Hadolint\nNo report found\n")
 
-          with open("summary.md", "w") as f:
+          with open("summary.md", "w", encoding="utf-8") as f:
               f.write("\n".join(lines))
           EOF
 
