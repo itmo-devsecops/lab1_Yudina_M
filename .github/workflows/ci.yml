@@ -35,7 +35,7 @@ jobs:
           bandit -r . -f json -o artifacts/bandit-report/bandit-report.json || true
 
       - name: Upload lint and bandit artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: lint-bandit
           path: artifacts/
@@ -70,7 +70,7 @@ jobs:
             --output artifacts/trivy/trivy-report.json .
 
       - name: Upload Trivy artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: trivy
           path: artifacts/trivy/
@@ -118,7 +118,7 @@ jobs:
           hadolint Dockerfile > artifacts/hadolint/hadolint-report.txt || true
 
       - name: Upload Hadolint artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: hadolint
           path: artifacts/hadolint/
@@ -190,7 +190,7 @@ jobs:
           EOF
 
       - name: Upload Summary
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: security-summary
           path: summary.md
