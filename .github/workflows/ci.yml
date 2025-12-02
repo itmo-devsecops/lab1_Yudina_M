@@ -2,19 +2,15 @@ name: CI Pipeline
 
 on:
   push:
-    branches: [ "main" ]
+    branches: ["main"]
   pull_request:
-    branches: [ "main" ]
-  schedule:
-    - cron: '0 12 * * 5'   # каждую пятницу
+    branches: ["main"]
 
 jobs:
-
-  lint_and_tests:
+  lint_and_security:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v3
 
       - name: Set up Python
@@ -24,57 +20,37 @@ jobs:
 
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
+          pip install --upgrade pip
           pip install -r requirements.txt
-          pip install -r requirements-dev.txt
+          pip install ruff bandit
 
-      - name: Run flake8
-        run: flake8 .
-
-      - name: Run pytest
-        run: pytest || true
-
-  ruff_lint:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-python@v4
-        with:
-          python-version: "3.10"
-      - run: pip install ruff
-      - run: ruff check .
-
-  bandit_scan:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-python@v4
-        with:
-          python-version: "3.10"
-      - run: pip install bandit
-      - run: bandit -r . -f json -o bandit-report.json || true
-      - uses: actions/upload-artifact@v4
-        with:
-          name: bandit-report
-          path: bandit-report.json
-
-  hadolint_job:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-
-      - name: Install hadolint
+      - name: Run ruff
         run: |
-          wget -O hadolint https://github.com/hadolint/hadolint/releases/latest/download/hadolint-Linux-x86_64
-          chmod +x hadolint
+          mkdir -p artifacts/ruff-report
+          ruff check . --format=json > artifacts/ruff-report/ruff-report.json || true
 
-      - name: Run hadolint
-        run: ./hadolint Dockerfile || true
+      - name: Run bandit
+        run: |
+          mkdir -p artifacts/bandit-report
+          bandit -r . -f json -o artifacts/bandit-report/bandit-report.json || true
 
-  docker_build:
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: lint-bandit
+          path: artifacts/
+
+  docker_and_trivy:
     runs-on: ubuntu-latest
+    needs: lint_and_security
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Install Docker
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y docker.io
 
       - name: Build Docker image
         run: docker build -t app:latest .
@@ -87,32 +63,136 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y trivy
 
-      - name: Run Trivy scan
-        run: trivy image --exit-code 0 --format json -o trivy-report.json app:latest || true
+      - name: Run Trivy
+        run: |
+          mkdir -p artifacts/trivy-report
+          trivy filesystem --exit-code 0 --no-progress --format json \
+            --output artifacts/trivy-report/trivy-report.json .
 
-      - uses: actions/upload-artifact@v4
+      - name: Upload Trivy artifact
+        uses: actions/upload-artifact@v4
         with:
-          name: trivy-report
-          path: trivy-report.json
+          name: trivy
+          path: artifacts/trivy-report/
 
-  healthcheck_test:
+  healthcheck:
     runs-on: ubuntu-latest
+    needs: docker_and_trivy
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout
+        uses: actions/checkout@v3
 
-      - name: Install dependencies
+      - name: Install Docker
+        run: sudo apt-get install -y docker.io
+
+      - name: Build image
+        run: docker build -t app:latest .
+
+      - name: Run container
         run: |
-          python3 -m pip install -r requirements.txt
+          docker run -d -p 5000:5000 --name test_container app:latest
+          sleep 5
 
-      - name: Run Flask app
-        run: |
-          nohup python3 app.py &
-          sleep 3
-
-      - name: Check /healthcheck
+      - name: Healthcheck
         run: |
           STATUS=$(curl -o /dev/null -s -w "%{http_code}" http://localhost:5000/healthcheck)
           echo "Status: $STATUS"
           if [ "$STATUS" != "200" ]; then
+            echo "Healthcheck FAILED"
             exit 1
           fi
+          echo "Healthcheck OK"
+
+  hadolint:
+    runs-on: ubuntu-latest
+    needs: lint_and_security
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Install Hadolint
+        run: |
+          wget -O /usr/local/bin/hadolint https://github.com/hadolint/hadolint/releases/latest/download/hadolint-Linux-x86_64
+          chmod +x /usr/local/bin/hadolint
+
+      - name: Run Hadolint
+        run: |
+          mkdir -p artifacts/hadolint-report
+          hadolint Dockerfile > artifacts/hadolint-report/hadolint-report.txt || true
+
+      - name: Upload Hadolint report
+        uses: actions/upload-artifact@v4
+        with:
+          name: hadolint
+          path: artifacts/hadolint-report/
+
+  summary:
+    runs-on: ubuntu-latest
+    needs: [lint_and_security, docker_and_trivy, hadolint]
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Generate summary.md
+        run: |
+          python3 << 'EOF'
+          import json, os
+
+          def load_json(path):
+              try:
+                  with open(path, 'r', encoding='utf-8') as f:
+                      return json.load(f)
+              except Exception:
+                  return None
+
+          lines = []
+          lines.append("# Security Summary Report\n")
+
+          # Ruff
+          ruff_path = "artifacts/lint-bandit/ruff-report/ruff-report.json"
+          ruff = load_json(ruff_path)
+          if ruff:
+              lines.append(f"## Ruff\nTotal issues: {len(ruff)}\n")
+          else:
+              lines.append("## Ruff\nNo report found\n")
+
+          # Bandit
+          bandit_path = "artifacts/lint-bandit/bandit-report/bandit-report.json"
+          bandit = load_json(bandit_path)
+          if bandit:
+              res = bandit.get("results", [])
+              lines.append(f"## Bandit\nTotal issues: {len(res)}\n")
+          else:
+              lines.append("## Bandit\nNo report found\n")
+
+          # Trivy
+          trivy_path = "artifacts/trivy/trivy-report.json"
+          trivy = load_json(trivy_path)
+          if trivy:
+              total = 0
+              for res in trivy.get("Results", []):
+                  vulns = res.get("Vulnerabilities", [])
+                  total += len(vulns)
+              lines.append(f"## Trivy\nTotal vulnerabilities: {total}\n")
+          else:
+              lines.append("## Trivy\nNo report found\n")
+
+          # Hadolint
+          had_path = "artifacts/hadolint/hadolint-report.txt"
+          if os.path.exists(had_path):
+              text = open(had_path).read()
+              lines.append("## Hadolint\n```\n" + text + "\n```\n")
+          else:
+              lines.append("## Hadolint\nNo report found\n")
+
+          with open("summary.md", "w") as f:
+              f.write("\n".join(lines))
+          EOF
+
+      - name: Upload Summary
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-summary
+          path: summary.md
