@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, url_for
+from flask import Flask, render_template, request, redirect, url_for, jsonify
 from database import Base, engine, SessionLocal
 from models import Student
 
@@ -45,7 +45,6 @@ def delete_student(student_id):
     return redirect(url_for('index'))
 
 
-@app.route('/healthcheck')
+@app.route("/healthcheck")
 def healthcheck():
-    return {"status": "ok"}, 200
-
+    return jsonify({"status": "ok"}), 200
