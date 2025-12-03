@@ -6,11 +6,12 @@ on:
   pull_request:
     branches: ["main"]
 
+  # Раз в неделю (пятница 12:00)
   schedule:
     - cron: "0 12 * * 5"
 
 jobs:
-  lint_and_security:
+  lint_and_tests:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -21,31 +22,40 @@ jobs:
         with:
           python-version: "3.10"
 
-      - name: Install dependencies
+      - name: Install Python deps
         run: |
           pip install --upgrade pip
           pip install -r requirements.txt
-          pip install ruff bandit
+          pip install flake8 pytest ruff bandit
+
+      - name: Run flake8
+        run: |
+          mkdir -p artifacts/flake8
+          flake8 . --output-file artifacts/flake8/flake8-report.txt || true
+
+      - name: Run pytest
+        run: |
+          pytest || true
 
       - name: Run ruff
         run: |
-          mkdir -p artifacts/ruff-report
-          ruff check . --format=json > artifacts/ruff-report/ruff-report.json || true
+          mkdir -p artifacts/ruff
+          ruff check . --format=json > artifacts/ruff/ruff.json || true
 
       - name: Run bandit
         run: |
-          mkdir -p artifacts/bandit-report
-          bandit -r . -f json -o artifacts/bandit-report/bandit-report.json || true
+          mkdir -p artifacts/bandit
+          bandit -r . -f json -o artifacts/bandit/bandit.json || true
 
-      - name: Upload lint and bandit artifacts
+      - name: Upload lint/test artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: lint-bandit
+          name: lint-test-security
           path: artifacts/
 
   docker_and_trivy:
     runs-on: ubuntu-latest
-    needs: lint_and_security
+    needs: lint_and_tests
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -57,8 +67,10 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y wget gnupg lsb-release
-          wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | sudo tee /etc/apt/trusted.gpg.d/trivy.asc
-          echo "deb https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main" | sudo tee /etc/apt/sources.list.d/trivy.list
+          wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key \
+            | sudo tee /etc/apt/trusted.gpg.d/trivy.asc
+          echo "deb https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main" \
+            | sudo tee /etc/apt/sources.list.d/trivy.list
           sudo apt-get update
           sudo apt-get install -y trivy
 
@@ -66,7 +78,7 @@ jobs:
         run: |
           mkdir -p artifacts/trivy
           trivy fs --exit-code 0 --no-progress --format json \
-            --output artifacts/trivy/trivy-report.json .
+            --output artifacts/trivy/trivy.json .
 
       - name: Upload Trivy artifact
         uses: actions/upload-artifact@v4
@@ -94,27 +106,28 @@ jobs:
           STATUS=$(curl -o /dev/null -s -w "%{http_code}" http://localhost:5000/healthcheck)
           echo "Status: $STATUS"
           if [ "$STATUS" != "200" ]; then
-              echo "Healthcheck FAILED"
-              exit 1
+            echo "Healthcheck FAILED"
+            exit 1
           fi
           echo "Healthcheck OK"
 
   hadolint:
     runs-on: ubuntu-latest
-    needs: lint_and_security
+    needs: lint_and_tests
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
       - name: Install Hadolint
         run: |
-          wget -O /usr/local/bin/hadolint https://github.com/hadolint/hadolint/releases/latest/download/hadolint-Linux-x86_64
+          wget -O /usr/local/bin/hadolint \
+            https://github.com/hadolint/hadolint/releases/latest/download/hadolint-Linux-x86_64
           chmod +x /usr/local/bin/hadolint
 
       - name: Run Hadolint
         run: |
           mkdir -p artifacts/hadolint
-          hadolint Dockerfile > artifacts/hadolint/hadolint-report.txt || true
+          hadolint Dockerfile > artifacts/hadolint/hadolint.txt || true
 
       - name: Upload Hadolint artifact
         uses: actions/upload-artifact@v4
@@ -124,7 +137,7 @@ jobs:
 
   summary:
     runs-on: ubuntu-latest
-    needs: [lint_and_security, docker_and_trivy, hadolint]
+    needs: [lint_and_tests, docker_and_trivy, hadolint]
     steps:
       - name: Download all artifacts
         uses: actions/download-artifact@v4
@@ -136,55 +149,30 @@ jobs:
           python3 << 'EOF'
           import json, os
 
-          def load_json(path):
+          def load(path):
               try:
-                  with open(path, 'r', encoding='utf-8') as f:
+                  with open(path) as f:
                       return json.load(f)
               except:
                   return None
 
-          lines = []
-          lines.append("# Security Summary Report\n")
+          lines = ["# Security Summary Report\n"]
 
-          # Ruff
-          ruff_path = "artifacts/lint-bandit/ruff-report/ruff-report.json"
-          ruff = load_json(ruff_path)
+          ruff = load("artifacts/lint-test-security/ruff/ruff.json")
           if ruff:
-              lines.append(f"## Ruff\nTotal issues: {len(ruff)}\n")
-          else:
-              lines.append("## Ruff\nNo report found\n")
+              lines.append(f"## Ruff\nIssues: {len(ruff)}\n")
 
-          # Bandit
-          bandit_path = "artifacts/lint-bandit/bandit-report/bandit-report.json"
-          bandit = load_json(bandit_path)
+          bandit = load("artifacts/lint-test-security/bandit/bandit.json")
           if bandit:
               issues = bandit.get("results", [])
-              lines.append(f"## Bandit\nTotal issues: {len(issues)}\n")
-          else:
-              lines.append("## Bandit\nNo report found\n")
+              lines.append(f"## Bandit\nIssues: {len(issues)}\n")
 
-          # Trivy
-          trivy_path = "artifacts/trivy/trivy-report.json"
-          trivy = load_json(trivy_path)
+          trivy = load("artifacts/trivy/trivy.json")
           if trivy:
-              total = 0
-              for res in trivy.get("Results", []):
-                  vulns = res.get("Vulnerabilities", [])
-                  if vulns:
-                      total += len(vulns)
-              lines.append(f"## Trivy\nTotal vulnerabilities: {total}\n")
-          else:
-              lines.append("## Trivy\nNo report found\n")
+              total = sum(len(r.get("Vulnerabilities", []) or []) for r in trivy.get("Results", []))
+              lines.append(f"## Trivy\nVulnerabilities: {total}\n")
 
-          # Hadolint
-          hadolint_path = "artifacts/hadolint/hadolint-report.txt"
-          if os.path.exists(hadolint_path):
-              text = open(hadolint_path).read()
-              lines.append("## Hadolint\n```\n" + text + "\n```\n")
-          else:
-              lines.append("## Hadolint\nNo report found\n")
-
-          with open("summary.md", "w", encoding="utf-8") as f:
+          with open("summary.md", "w") as f:
               f.write("\n".join(lines))
           EOF
 
