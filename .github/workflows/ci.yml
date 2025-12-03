@@ -6,7 +6,6 @@ on:
   pull_request:
     branches: ["main"]
 
-  # 🔥 Добавлен schedule (раз в неделю, по пятницам, 12:00)
   schedule:
     - cron: "0 12 * * 5"
 
